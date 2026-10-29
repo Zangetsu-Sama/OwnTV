@@ -934,9 +934,10 @@ class LiveViewModel(
      * Fill in [channel]'s past days in the guide from the provider's archive, when its guide feed
      * stops short of it ([tv.own.owntv.core.repository.EpgRepository.fillArchiveGuide]). Only the
      * channel the user rests on for 1.5 s is asked for, so moving through a list asks nothing; the
-     * engine itself asks at most once every few hours per channel.
+     * engine itself asks at most once every few hours per channel. The TV Guide asks for the rows it
+     * shows itself ([tv.own.owntv.features.epg.EpgViewModel.queueArchiveGuide]).
      */
-    fun requestArchiveGuide(channel: ChannelEntity) {
+    private fun requestArchiveGuide(channel: ChannelEntity) {
         if (channel.catchup) archiveRequests.tryEmit(channel)
     }
 
