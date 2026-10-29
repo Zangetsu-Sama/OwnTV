@@ -101,6 +101,9 @@ import tv.own.owntv.core.live.LiveEpgReader
 import tv.own.owntv.core.live.LiveArchiveUrls
 import tv.own.owntv.core.live.CatchupContinue
 
+/** The longest the TV Guide waits for the remembered category before it loads anyway. */
+private const val CATEGORY_SETTLE_MS = 6_000L
+
 class LiveViewModel(
     private val appContext: Context,
     private val channelDao: ChannelDao,
@@ -886,6 +889,9 @@ class LiveViewModel(
     private var restoreJob: Job? = null
     private val picksToSave = MutableSharedFlow<LiveKey>(extraBufferCapacity = 16)
 
+    /** The context the last restore finished (or gave way to a pick) for: see [settledCategory]. */
+    private val restoredFor = MutableStateFlow<Ctx?>(null)
+
     private fun userPicked(key: LiveKey, save: Boolean) {
         restoreJob?.cancel()
         lastPicked = key
@@ -901,19 +907,23 @@ class LiveViewModel(
     private fun restoreCategory(c: Ctx) {
         restoreJob?.cancel()
         restoreJob = viewModelScope.launch {
-            val target = LiveCategoryMemory.target(
-                settings.rememberCategoryLive.first(),
-                lastPicked,
-                settings.lastLiveCategory.first(),
-            ) ?: return@launch
-            railSnapshot.first { (railCtx, rail) ->
-                if (railCtx != c) return@first false
-                val shown = if (lockedKey != null) previousKey ?: LiveKey.All else _selected.value
-                when (LiveCategoryMemory.step(target, shown, rail.map { it.key })) {
-                    LiveCategoryMemory.Step.APPLY -> { show(target); true }
-                    LiveCategoryMemory.Step.FALLBACK -> { show(LiveKey.All); false }
-                    LiveCategoryMemory.Step.WAIT -> false
+            try {
+                val target = LiveCategoryMemory.target(
+                    settings.rememberCategoryLive.first(),
+                    lastPicked,
+                    settings.lastLiveCategory.first(),
+                ) ?: return@launch
+                railSnapshot.first { (railCtx, rail) ->
+                    if (railCtx != c) return@first false
+                    val shown = if (lockedKey != null) previousKey ?: LiveKey.All else _selected.value
+                    when (LiveCategoryMemory.step(target, shown, rail.map { it.key })) {
+                        LiveCategoryMemory.Step.APPLY -> { show(target); true }
+                        LiveCategoryMemory.Step.FALLBACK -> { show(LiveKey.All); false }
+                        LiveCategoryMemory.Step.WAIT -> false
+                    }
                 }
+            } finally {
+                restoredFor.value = c
             }
         }
     }
@@ -921,6 +931,18 @@ class LiveViewModel(
     /** Shows [key] without remembering it; under a More-screen pin it becomes what [unlock] goes back to. */
     private fun show(key: LiveKey) {
         if (lockedKey != null) previousKey = key else _selected.value = key
+    }
+
+    /**
+     * The category for the TV Guide to open on: the remembered one once the restore for the current
+     * profile and playlists has brought it back, or after [timeoutMs] whatever is selected then. Opening
+     * on it directly spares the guide a first load of every channel's programmes.
+     */
+    suspend fun settledCategory(timeoutMs: Long = CATEGORY_SETTLE_MS): LiveKey {
+        kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+            combine(ctx, restoredFor) { c, done -> c.profileId >= 0 && done == c }.first { it }
+        }
+        return _selected.value
     }
 
     init {

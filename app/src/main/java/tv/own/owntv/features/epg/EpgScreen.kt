@@ -232,8 +232,17 @@ fun EpgScreen(
     val rememberCategory by liveVm.rememberCategory.collectAsStateWithLifecycle()
     val sharedCategory = liveMode || rememberCategory
     val categoryKey: LiveKey? = if (sharedCategory) liveSelected.takeUnless { it == LiveKey.All } else categoryFilter
-    LaunchedEffect(sharedCategory, liveSelected) { if (sharedCategory) vm.setCategoryFilter(liveSelected) }
-    LaunchedEffect(Unit) { vm.load() } // reload from DB each time the guide is opened
+    // The first load waits for the shared category, so the guide opens on it rather than loading every
+    // channel's programmes first and then the category's. Later picks follow it.
+    var categorySettled by remember { mutableStateOf(false) }
+    LaunchedEffect(sharedCategory, liveSelected, categorySettled) {
+        if (sharedCategory && categorySettled) vm.setCategoryFilter(liveSelected)
+    }
+    LaunchedEffect(Unit) {
+        if (sharedCategory) vm.setCategoryFilter(liveVm.settledCategory())
+        vm.load() // reload from DB each time the guide is opened
+        categorySettled = true
+    }
 
     // The preview stays on its channel while the guide is browsed; OK on a row brings that row's channel
     // into it, and OK again on the channel already there watches it full screen. Following the focus made
