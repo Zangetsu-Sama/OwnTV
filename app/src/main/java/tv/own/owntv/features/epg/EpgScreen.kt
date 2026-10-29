@@ -619,6 +619,7 @@ fun EpgScreen(
                                         focusedRow = index
                                         if (cursorTime !in state.windowStart until state.windowEnd) cursorTime = System.currentTimeMillis()
                                         if (!effectivePreview) liveVm.onChannelFocused(channel)
+                                        liveVm.requestArchiveGuide(channel)
                                     },
                                     onCursor = { cursorTime = it },
                                     onShow = { p -> selected = channel to p },

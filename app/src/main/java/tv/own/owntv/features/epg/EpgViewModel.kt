@@ -436,6 +436,11 @@ class EpgViewModel(
             .drop(if (epgActivity.active.value.isEmpty()) 1 else 0)
             .onEach { load() }
             .launchIn(viewModelScope)
+        // Reload when a catch-up channel's past days arrive from its provider's archive (asked for by
+        // the focused row, see LiveViewModel.requestArchiveGuide).
+        epgRepository.archiveGuideAdded
+            .onEach { load() }
+            .launchIn(viewModelScope)
         // Reload when a category lock closes or opens (the relock on leaving the app, a PIN entry), so
         // the grid and the zap list armed from it follow. drop(1): the screen triggers the initial load.
         settings.activeProfileId
